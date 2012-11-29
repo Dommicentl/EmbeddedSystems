@@ -1,0 +1,10 @@
+*.asm
+*.lst
+*.hst
+*.hex
+*.cod
+*.o
+.*
+/.*
+!.gitignore
+*~
