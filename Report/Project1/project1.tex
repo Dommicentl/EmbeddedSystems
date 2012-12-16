@@ -1,0 +1,42 @@
+\documentclass[a4]{article}
+\usepackage{fullpage}
+\usepackage{listings}
+\title{Real-time and embedded systems: Project 1}
+\author{Leendert Dommicent and Jorn Van Loock}
+\begin{document}
+\maketitle
+\setlength{\parindent}{0px}
+\setlength{\parskip}{8px}
+\section{Documentation for the user}
+\label{sec:user}
+When you power up the clock you will see the following on the display \textit{00:00:00}. Now you have to set the current time. If you push \textit{BUT1} the seconds will increase. If the seconds are correct push \textit{BUT2}, now the minutes will increase when you push \textit{BUT1}. Repeat this to set the hours. The three leds will notify you which part of the time you are editing.\par
+When you press \textit{BUT2} after setting the hours the display will again show \textit{00:00:00}. Now you have to set the alarm time. You can do this the same way as you set the current time. \par
+After you set the time the yellow led will start to blink. The duration of the sequence on off is one second. When the alarm goes of you will see that the red led will start to blink for 30 seconds.\par
+To shut down the clock, just cut the power. Be ware that the current time and the alarm has to be set again after a power cut.
+\section{Documentation for the system engineer}
+\label{sec:engineer}
+First you have to know that you can build two versions of the clock software. The first one is the actual clock and the second one is a program that displays a specific parameter. Normally you only need to build the first one. This is how you do it:
+\begin{enumerate}
+\item Connect the board and your computer with the router.
+\item Open your console.
+\item Navigate to the folder project1 which contains the source code.
+\item type the following command: \textit{sudo make project1}
+\label{itm:command}
+\item type: \textit{tftp 192.168.97.60}
+\item type: binary
+\item type: verbose
+\item type: trace
+\item Press on the reset button of the board.
+\item Wait until the light of the router port on which the board is connected lights up.
+\item type: put project1.hex
+\end{enumerate}
+After this the clock should start. For instruction how to use it look at section \ref{sec:user}.
+\subsection{Known problems}
+If you notice that the clock doesn't run on a normal speed you should do the following. Repeat the procedure stated above but in step \ref{itm:command} replace the command by \textit{sudo make project1\_freq}. Now set the clock and when it starts running it will show a number in the bottom left corner. Fill in this number on line 112 of the source code project1.c. Now repeat the original procedure. The clock should now run with the right speed.
+\section{Documentation for programmers}
+The time is being saved in a structure with 3 integers, the hours, the minutes and the seconds. There are 2 structures initialized together with their pointers. The pointers are filled in in the main method. The 2 structures are used for the current time and the alarm time.\par
+The main method initialize the \textit{timer0} of the PIC controller. Then the time structures are explicitly set to zero. Next we start the \textit{setTime} method. This method handles the setting of the time with the 2 buttons. It's called twice, one for the current time and one for the alarm time. When this is done \textit{timer0} is started.\par
+The \textit{handler} method handles the interrupt made by the \textit{timer0} registry overflowing. When it overflows \textit{counterMax} times it toggles the yellow led en the red when there is an alarm. The second time it overflows \textit{counterMax} times it increments the current time and checks if the current time is equal to the alarm time. If this is the case an alarm is triggered. Also if the alarm is running for 30 seconds it is terminated. So \textit{counterMax} should be equal to the amount of times the \textit{timer0} register overflows in half a second.\par
+If you compile the code with parameter \textit{-DFREQ\_CHECK} the behaviour is different. After setting the clock the clock doesn't start to run. It initializes \textit{timer1} to overflow every half a second. When \textit{timer1} overflows, it prints the amount of times \textit{timer0} overflowed. This should be the value of \textit{counterMax}. Like this you can calibrate the clock. The clock will not run while being compiled with this option!\par
+The program doesn't use malloc. There was no need to add structures dynamically only 2 fixed ones. It was enough to just statically create them.
+\end{document}

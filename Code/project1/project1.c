@@ -12,20 +12,33 @@
 void DisplayString(BYTE pos, char* text);
 size_t strlcpy(char *dst, const char *src, size_t siz);
 
-struct time { 
+typedef struct { 
 	int hours;
 	int minutes;
 	int seconds;
-}currentTime,alarmTime;
+} timeValue;
+static timeValue currentTimeV;
+static timeValue alarmTimeV;
+static timeValue *currentTime;
+static timeValue *alarmTime;
 
-void incrementHours(struct time *time, int handleOverflow){
+int isAlarm(void){
+	if(currentTime->hours == alarmTime->hours &&
+		currentTime->minutes == alarmTime->minutes &&
+		currentTime->seconds == alarmTime->seconds){
+		return 1;
+	}
+	return 0;
+}    
+
+void incrementHours(timeValue *time, int handleOverflow){
 	(time->hours)++;
 	if(time->hours >= 24){
 		time->hours = time->hours % 24;
 	}
 }
 
-void incrementMinutes(struct time *time, int handleOverflow){
+void incrementMinutes(timeValue *time, int handleOverflow){
 	(time->minutes)++;
 	if(time->minutes >= 60){
 		time->minutes = time->minutes % 60;
@@ -34,7 +47,7 @@ void incrementMinutes(struct time *time, int handleOverflow){
 	}
 }
 
-void incrementSeconds(struct time *time, int handleOverflow){
+void incrementSeconds(timeValue *time, int handleOverflow){
 	(time->seconds)++;
 	if(time->seconds >= 60){
 		time->seconds = time->seconds % 60;
@@ -43,49 +56,202 @@ void incrementSeconds(struct time *time, int handleOverflow){
 	}
 }
 
-void prettyPrint(struct time *time){
-	char toPrint[9];
+void prettyPrint(timeValue *time){
+	char toPrint[16];
 	sprintf(toPrint, "%02d:%02d:%02d", time->hours, time->minutes, time->seconds);
-	DisplayString(toPrint, 0);
+	DisplayString(0, toPrint);
 }
 
-void setTime(struct time *time){
+void setTime(timeValue *time){
+	prettyPrint(time);
 	while(BUTTON1_IO == 1u){
+		LED2_IO = 1;
 		if(BUTTON0_IO == 0u){
 			incrementSeconds(time,0);
 			prettyPrint(time);
+			while(BUTTON0_IO == 0u){};
 		}
+		LED2_IO = 0;
 	}
+	while(BUTTON1_IO == 0u){};
 	while(BUTTON1_IO == 1u){
+		LED1_IO = 1;
 		if(BUTTON0_IO == 0u){
 			incrementMinutes(time,0);
 			prettyPrint(time);
+			while(BUTTON0_IO == 0u){};
 		}
+		LED1_IO = 0;
 	}
+	while(BUTTON1_IO == 0u){};
 	while(BUTTON1_IO == 1u){
+		LED0_IO = 1;
 		if(BUTTON0_IO == 0u){
 			incrementHours(time,0);
 			prettyPrint(time);
+			while(BUTTON0_IO == 0u){};
+		}
+		LED0_IO = 0;
+	}
+	while(BUTTON1_IO == 0u){};
+}
+
+void prettyPrint2(int time, int loc){
+	char toPrint[15];
+	sprintf(toPrint, "%d", time);
+	DisplayString(loc, toPrint);
+}
+
+void handler(void) interrupt 1{
+	static int half = 0;
+	static int alarm = 0;
+	static long int counter = 0;
+	#ifdef FREQ_CHECK
+	static long int counterMax = 80000;
+	#else
+	static long int counterMax = 30937;
+	#endif
+	#ifdef FREQ_CHECK
+	if(PIR1bits.TMR1IF == 1){
+		PIR1bits.TMR1IF = 0;
+		prettyPrint2(counter,16);
+		counter = 0;
+		TMR1H = 0xc0;
+		TMR1L = 0x00;
+	}
+	else
+	#endif
+	if(INTCONbits.T0IF == 1){
+		counter++;
+		INTCONbits.T0IF == 0;
+		//reset clock
+		TMR0H = 0x00;
+		TMR0L = 0x00;
+		if(counter > counterMax){
+			if(half == 0){
+				half = 1;
+				//toggle yellow led
+				LED0_IO=1;
+				if(alarm > 0){
+					//toggle red led
+					LED1_IO = 1;
+				}
+			}
+			else {
+				half = 0;
+				//toggle yellow led
+				LED0_IO=0;
+				incrementSeconds(currentTime, 1);
+				prettyPrint(currentTime);
+				if(alarm == 0 && isAlarm()){
+					alarm = 1;
+				}
+				if(alarm > 0){
+					//toggle red led
+					LED1_IO=0;
+					alarm++;
+				}
+				if(alarm > 30){
+					alarm = 0;
+				}
+			}
+			counter = 0;
 		}
 	}
 }
 
-void initBoard(){
-	LCDInit;
+void initTime(timeValue *time){
+	time->seconds = 0;
+	time->minutes = 0;
+	time->hours = 0;
+}
+
+void initBoard(void){
+	LCDInit();
 	DelayMs(100);
 	//Configure buttons
     BUTTON0_TRIS = 1;
     BUTTON1_TRIS = 1;
+	//Configure timing
+	TMR0H = 0x00;
+	TMR0L = 0x00;
+	T0CONbits.T08BIT = 0;
+	T0CONbits.T0CS = 0;
+	T0CONbits.PSA = 1;
+    //Init leds
+    LED0_TRIS=0;
+	LED1_TRIS=0;
+	LED2_TRIS=0;
+	LED0_IO = 0;
+	LED1_IO = 0;
+	LED2_IO = 0;
+}
+
+void initT1(void){
+	TMR1H = 0xc0;
+	TMR1L = 0x00;
 	
-	//Todo configure timer!!
+	T1CONbits.RD16 = 1;
+	T1CONbits.T1CKPS1 = 0;
+	T1CONbits.T1CKPS0 = 0;
+	T1CONbits.T1OSCEN = 1;
+	T1CONbits.T1SYNC = 1;
+	T1CONbits.TMR1CS = 1;
+	
+	//enable interrupts
+	PIE1bits.TMR1IE = 1;
+	PIR1bits.TMR1IF = 0;
+	IPR1bits.TMR1IP = 1;
 }
 
 void main(void){
-   LCDInit();
-   DelayMs(100);
-   initBoard;
-   setTime(&currentTime);
-   setTime(&alarmTime);
+	T0CONbits.TMR0ON = 0;
+	initBoard();
+	#ifdef FREQ_CHECK
+		initT1();
+		T1CONbits.TMR1ON = 1;
+	#endif
+	currentTime = &currentTimeV;
+	alarmTime = &alarmTimeV;
+	initTime(currentTime);
+	initTime(alarmTime);
+	setTime(currentTime);
+	setTime(alarmTime);
+	//Enable interrupts
+	INTCONbits.GIE = 1;
+	INTCON2bits.T0IP = 1;
+	INTCONbits.T0IF = 0;
+	INTCONbits.T0IE = 1;
+	// Timer 0 enable
+	T0CONbits.TMR0ON = 1;
+}
+
+/*************************************************
+ Function DisplayWORD:
+ writes a WORD in hexa on the position indicated by
+ pos. 
+ - pos=0 -> 1st line of the LCD
+ - pos=16 -> 2nd line of the LCD
+
+ __SDCC__ only: for debugging
+*************************************************/
+#if defined(__SDCC__)
+void DisplayWORD(BYTE pos, WORD w) //WORD is a 16 bits unsigned
+{
+    BYTE WDigit[6]; //enough for a  number < 65636: 5 digits + \0
+    BYTE j;
+    BYTE LCDPos=0;  //write on first line of LCD
+    unsigned radix=10; //type expected by sdcc's ultoa()
+
+    LCDPos=pos;
+    ultoa(w, WDigit, radix);      
+    for(j = 0; j < strlen((char*)WDigit); j++)
+    {
+       LCDText[LCDPos++] = WDigit[j];
+    }
+    if(LCDPos < 32u)
+       LCDText[LCDPos] = 0;
+    LCDUpdate();
 }
 
 /*************************************************
@@ -107,7 +273,7 @@ void DisplayString(BYTE pos, char* text)
    LCDUpdate();
 
 }
-
+#endif
 /*-------------------------------------------------------------------------
  *
  * strlcpy.c
