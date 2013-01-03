@@ -16,7 +16,7 @@ static NODE_INFO broadcast;
 static NODE_INFO dhcpserver;
 static NODE_INFO gateway;
 static NODE_INFO relay;
-static BYTE relayIp[4] = {192, 168, 97, 60};
+static BYTE relayIp[4] = {192, 168, 97, 70};
 static ROM BYTE SerializedMACAddress[6] = {MY_DEFAULT_MAC_BYTE1, MY_DEFAULT_MAC_BYTE2, MY_DEFAULT_MAC_BYTE3, MY_DEFAULT_MAC_BYTE4, MY_DEFAULT_MAC_BYTE5, MY_DEFAULT_MAC_BYTE6};
 
 APP_CONFIG AppConfig;
@@ -26,11 +26,15 @@ static enum
 	LISTENSETUP_C, LISTEN_C, ARPRESOLVE_START, ARPRESOLVE, TRANSMITSETUP_S, TRANSMIT_S, LISTENSETUP_S, LISTEN_S, TRANSMITSETUP_C, TRANSMIT_C
 } state = LISTENSETUP_C;
 
+void LowISR(void) __interrupt (2){
+	TickUpdate();
+}
+
 void DisplayString(BYTE pos, char* text)
 {
         BYTE l = strlen(text);
         BYTE max = 32 - pos;
-        strlcpy((char*)&LCDText[pos], text, (l < max) ? l : max);
+        strlcpy((char*)&LCDText[pos], text, (l < max) ? l+1 : max);
         LCDUpdate();
 }
 
@@ -80,15 +84,13 @@ void start(void){
     BYTE *writePointer = &buffer[0];
 	int i;
 	while(1){
-		StackTask();
-		
+		StackTask();		
 		switch(state)
 		{
 			case LISTENSETUP_C:
 				DisplayString(0,"LISTENSETUP_C");
-				receiveSocket = UDPOpen((UDP_PORT)67, NULL, (UDP_PORT)68);
+				receiveSocket = UDPOpen((UDP_PORT)67, &broadcast, (UDP_PORT)68);
 				if(receiveSocket != INVALID_UDP_SOCKET){
-					LED0_IO = 1;
 					state = LISTEN_C;
 				}
 				break;
@@ -97,7 +99,6 @@ void start(void){
 				if(!UDPIsGetReady(receiveSocket)){
 					break;
 				}
-				LED1_IO = 1;
 				//listen to the DHCP pakket of the client
 				readPointer = &buffer[0];
 				while(UDPGet(readPointer) == TRUE){
@@ -113,11 +114,12 @@ void start(void){
 				break;
 			case ARPRESOLVE_START:
 				DisplayString(0,"ARPRESOLVE_START");
+				LED0_IO = 1;
 				ARPResolve(&gateway.IPAddr);
 				state =  ARPRESOLVE;
 				break;
 			case ARPRESOLVE:
-				DisplayString(0,"ARPRESOLVE");
+				DisplayString(0,"ARPRESOLVE_REC");
 				if(!ARPIsResolved(&gateway.IPAddr, &dhcpserver.MACAddr))
 					break;
 				state = TRANSMITSETUP_S;
@@ -169,11 +171,12 @@ void start(void){
 				if(!UDPIsPutReady(receiveSocket))
 					break;
 				//transmit the DHCP response to the client
+				writePointer = &buffer[0];
 				while(UDPPut(*writePointer) == TRUE && readPointer != writePointer)
 					writePointer++;
 				UDPFlush();
 				UDPClose(transmitSocket);
-				state = LISTENSETUP_S;
+				state = LISTENSETUP_C;
 				break;
 		}
 	}
@@ -192,15 +195,12 @@ void initAppConfig(void){
      
     AppConfig.MyIPAddr.Val = (DWORD)relayIp[0] | (DWORD)relayIp[1] << 8 | (DWORD)relayIp[2] << 16 | (DWORD)relayIp[3] << 24;
     AppConfig.DefaultIPAddr.Val = AppConfig.MyIPAddr.Val;
-    AppConfig.MyMask.Val = (DWORD)255 | (DWORD)255 << 8 | (DWORD)255 << 16 | (DWORD)255 << 24;
+    AppConfig.MyMask.Val = (DWORD)255 | (DWORD)255 << 8 | (DWORD)255 << 16 | (DWORD)0 << 24;
     AppConfig.DefaultMask.Val = AppConfig.MyMask.Val;
     AppConfig.MyGateway.Val = (DWORD)192 | (DWORD)168 << 8 | (DWORD)97 << 16 | (DWORD)1 << 24;
 }
 
-void initBoard(void){
-	// Enable 4x/5x/96MHz PLL
-	OSCTUNE = 0x40;
-	
+void initBoard(void){	
 	LED0_TRIS = 0;
 	LED1_TRIS = 0;
 	LED2_TRIS = 0;
@@ -208,25 +208,30 @@ void initBoard(void){
 	LED1_IO = 0;
 	LED2_IO = 0;
 	
-	if(OSCCONbits.IDLEN)
+	// Enable PLL but disable pre and postscalers: the primary oscillator
+        // runs at the speed of the 25MHz external quartz
+	OSCTUNE = 0x40;
+
+	// Switch to primary oscillator mode, 
+        // regardless of if the config fuses tell us to start operating using 
+        // the the internal RC
+	// The external clock must be running and must be 25MHz for the 
+	// Ethernet module and thus this Ethernet bootloader to operate.
+        if(OSCCONbits.IDLEN) //IDLEN = 0x80; 0x02 selects the primary clock
 		OSCCON = 0x82;
-    else
+	else
 		OSCCON = 0x02;
 
-	TRISGbits.TRISG5 = 0;
-
-    
-    // Enable Interrupts   
-    RCONbits.IPEN = 1;      // Enable interrupt priorities   
-    INTCONbits.GIEH = 1;   
+	// Enable Interrupts
+	RCONbits.IPEN = 1;		// Enable interrupt priorities
+    INTCONbits.GIEH = 1;
     INTCONbits.GIEL = 1;
+        
     LCDInit();
     DelayMs(100);
-    TickInit();
     initAppConfig();
+    TickInit();
     StackInit();
-	UDPInit();
-   
 }
 
 void main(void){

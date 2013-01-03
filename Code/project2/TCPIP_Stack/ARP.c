@@ -112,12 +112,12 @@ static BOOL ARPPut(ARP_PACKET* packet)
 {
     while(!MACIsTxReady());
     MACSetWritePtr(BASE_TX_ADDR);
-	
 
     packet->HardwareType  = HW_ETHERNET;
     packet->Protocol      = ARP_IP;
     packet->MACAddrLen    = sizeof(MAC_ADDR);
     packet->ProtocolLen   = sizeof(IP_ADDR);
+
 #if defined(HI_TECH_C) || defined (__SDCC__)
     memcpy(&packet->SenderMACAddr, (void*)&AppConfig.MyMACAddr, 
            sizeof(packet->SenderMACAddr));
@@ -127,11 +127,9 @@ static BOOL ARPPut(ARP_PACKET* packet)
     packet->SenderIPAddr.Val  = AppConfig.MyIPAddr.Val;
 
     SwapARPPacket(packet);
-
     MACPutHeader(&packet->TargetMACAddr, MAC_ARP, sizeof(*packet));
     MACPutArray((BYTE*)packet, sizeof(*packet));
     MACFlush();
-	
     return TRUE;
 }
 

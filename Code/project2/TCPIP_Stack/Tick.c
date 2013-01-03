@@ -161,8 +161,8 @@ static void GetTickCopy(void)
 #if defined(__18CXX) || defined (__SDCC__)
 	do
 	{
-           INTCONbits.TMR0IE = 1;		// Enable interrupt
-           Nop();
+       INTCONbits.TMR0IE = 1;		// Enable interrupt
+       Nop();
 	   INTCONbits.TMR0IE = 0;		// Disable interrupt
 	   vTickReading[0] = TMR0L;
 	   vTickReading[1] = TMR0H;
